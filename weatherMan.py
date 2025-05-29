@@ -1,11 +1,11 @@
 import os
-import sys
+import argparse
 import csv
 from datetime import datetime
 from collections import defaultdict
 
 def get_weather_files(directory):
-    """Return a list of .txt files in the specified directory."""
+    """Return a list of .txt files in the directory."""
     files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.txt')]
     #print(f"Found {len(files)} .txt files in {directory}")
     return files
@@ -31,14 +31,14 @@ def is_valid_humidity(humidity):
     try:
         humidity = int(humidity)
         return 0 <= humidity <= 100
-    except ValueError:
+    except Exception:
         return False
 
 def parse_weather_data(files, report_type):
     """
     Parse weather data from files.
-    For Report 1: Collect max/min temp and humidity per year.
-    For Report 2: Collect hottest day per year.
+    For Report 1: collect max/min temp and humidity per year.
+    For Report 2: collect hottest day per year.
     """
     if report_type == 1:
         yearly_stats = defaultdict(lambda: {
@@ -62,34 +62,32 @@ def parse_weather_data(files, report_type):
                 raw_lines = file.readlines()
                 lines = [line.strip() for line in raw_lines if line.strip() and not line.strip().startswith('<!--')]
                 if not lines:
-                    #print(f"  File is empty or only contains invalid lines")
                     continue
 
                 reader = csv.reader(lines, delimiter=',', skipinitialspace=True)
                 header = next(reader, None)
                 if header and len(header) >= 10:
-                    #print(f"  Header: {header[:10]}...")
+                    #print(f"Header: {header[:10]}...")
                     if header[0] == 'PKST':
                         header[0] = 'PKT'
                 else:
-                    #print(f"  Invalid header: {header}")
                     header = default_header
                     reader = csv.reader(lines, delimiter=',', skipinitialspace=True)
-                    #print(f"  Using default header: {header[:10]}...")
+                    #print(f"Using default header: {header[:10]}...")
 
                 row_count = 0
                 for row in reader:
                     row_count += 1
                     if not row or all(cell.strip() == '' for cell in row):
-                        #print(f"  Row {row_count}: Skipped (empty)")
+                        #print(f"Row {row_count}: Skipped (empty)")
                         continue
                     if len(row) < 10:
-                        #print(f"  Row {row_count}: Skipped (too few columns): {row}")
+                        #print(f"Row {row_count}: Skipped (too few columns): {row}")
                         continue
 
                     date = parse_date(row[0])
                     if not date:
-                        #print(f"  Row {row_count}: Skipped (invalid date): {row[0]}")
+                        #print(f"Row {row_count}: Skipped (invalid date): {row[0]}")
                         continue
 
                     try:
@@ -98,11 +96,11 @@ def parse_weather_data(files, report_type):
                         max_humidity = int(row[7]) if row[7].strip() and is_valid_humidity(row[7]) else None
                         min_humidity = int(row[9]) if row[9].strip() and is_valid_humidity(row[9]) else None
                     except ValueError as e:
-                        #print(f"  Row {row_count}: Skipped (invalid numeric data): {row[:5]}... - Error: {e}")
+                        #print(f"Row {row_count}: Skipped (invalid numeric data): {row[:5]}... - Error: {e}")
                         continue
 
                     if max_temp is None and min_temp is None and max_humidity is None and min_humidity is None:
-                        #print(f"  Row {row_count}: Skipped (no valid data): {row[:5]}...")
+                        #print(f"Row {row_count}: Skipped (no valid data): {row[:5]}...")
                         continue
 
                     year = date.year
@@ -116,15 +114,15 @@ def parse_weather_data(files, report_type):
                         if min_humidity is not None:
                             yearly_stats[year]['min_humidity'] = min(yearly_stats[year]['min_humidity'], min_humidity)
                         valid_rows += 1
-                        #print(f"  Row {row_count}: Processed (year {year})")
+                        #print(f"Row {row_count}: Processed (year {year})")
                     else:
                         if max_temp is not None and max_temp > yearly_hottest[year]['temp']:
                             yearly_hottest[year] = {'temp': max_temp, 'date': row[0]}
                             valid_rows += 1
-                            #print(f"  Row {row_count}: Processed (year {year}, hottest temp {max_temp})")
+                            #print(f"Row {row_count}: Processed (year {year}, hottest temp {max_temp})")
 
         except Exception as e:
-            #print(f"  Error processing {filepath}: {e}")
+            #print(f"Error processing {filepath}: {e}")
             continue
 
     #print(f"\nProcessed {valid_rows} valid rows")
@@ -162,31 +160,35 @@ def print_report_2(yearly_hottest):
 
 def main():
     """Main function to handle command-line arguments and generate reports."""
-    if len(sys.argv) != 3:
-        print("Usage: python weatherman.py [report_number] [data_directory]")
-        print("report_number: 1 for Annual Weather Stats, 2 for Annual Hottest Day")
+    parser = argparse.ArgumentParser(
+        description="Generate weather reports from Lahore weather data files.",
+        usage="python weatherman.py <report_number> <data_directory>"
+    )
+    parser.add_argument(
+        "report_number",
+        type=int,
+        choices=[1, 2],
+        help="Report number: 1 for Annual Weather Stats, 2 for Annual Hottest Day"
+    )
+    parser.add_argument(
+        "data_directory",
+        type=str,
+        help="Directory containing weather data .txt files"
+    )
+
+    args = parser.parse_args()
+
+    if not os.path.isdir(args.data_directory):
+        print(f"Directory not found: {args.data_directory}")
         sys.exit(1)
 
-    try:
-        report_number = int(sys.argv[1])
-        if report_number not in [1, 2]:
-            raise ValueError
-    except ValueError:
-        print("Invalid report number. Use 1 or 2.")
-        sys.exit(1)
-
-    data_directory = sys.argv[2]
-    if not os.path.isdir(data_directory):
-        print(f"Directory not found: {data_directory}")
-        sys.exit(1)
-
-    files = get_weather_files(data_directory)
+    files = get_weather_files(args.data_directory)
     if not files:
         print("No data files found.")
         sys.exit(1)
 
-    data = parse_weather_data(files, report_number)
-    if report_number == 1:
+    data = parse_weather_data(files, args.report_number)
+    if args.report_number == 1:
         print_report_1(data)
     else:
         print_report_2(data)
